@@ -121,3 +121,4 @@ echo "Cloud storage at $capacity capacity after uploading $DIRS_TO_BACKUP in $SE
 
 rm "$LOCAL_FILES"
 rm "$LOCKFILE"
+exit "$n_errors"
