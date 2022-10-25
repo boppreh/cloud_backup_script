@@ -50,10 +50,6 @@ CHECKSUMS=checksums.txt
 # Warn if the remote storage is over 80% capacity.
 MAX_CAPACITY_PERCENT=80
 
-# In case the lockfile still exists, a previous run might still be active, or it crashed without deleting the lockfile.
-# If there haven't been changes to the local logs in these many minutes, ignore the lockfile and go ahead anyway.
-MAX_LOCKFILE_WAIT_IN_MINUTES=600
-
 # Temporary files deleted at the end of the run.
 LOCKFILE=.update_in_progress
 LOCAL_FILES_LIST=local_files.txt
@@ -92,9 +88,9 @@ fi
 
 set -o nounset
 
-# Don't run if the lockfile exists and the log or hash files have been updated in over ten hours (by default). The second check is to prevent a stray lock file from stopping all future backups.
-if test -f "$LOCKFILE" && test "$(find "$STDOUT_LOGS" "$CHECKSUMS" "$LOCAL_FILES_LIST" "$RSYNC_LOGS" -mmin -"$MAX_LOCKFILE_WAIT_IN_MINUTES" 2> /dev/null)"; then
-    echo "A cloud backup update is already in progress. Exiting..."
+# Don't run if the lockfile exists.
+if test -f "$LOCKFILE" ; then
+    echo "A cloud backup update is already in progress. Exiting..." | tee >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/1" >/dev/null)
     exit 1
 fi
 touch "$LOCKFILE"
@@ -107,7 +103,7 @@ touch "$RSYNC_LOGS"
 # Run
 ###
 
-curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
+curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
 
 (
 
@@ -117,7 +113,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     # List all local files.
     rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
     # Upload any new files without modifying or deleting existing ones.
-    rsync --files-from="$LOCAL_FILES_LIST" --stat--info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
+    rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
     # TODO: remove write permission on remote files after upload.
     echo
 
@@ -180,7 +176,7 @@ fi
 n_errors=$(wc -l < "$ERRORS")
 
 echo "Cloud storage at $capacity% capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
-| tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors")
+| tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
 
 
 ###
