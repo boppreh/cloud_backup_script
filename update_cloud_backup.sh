@@ -125,8 +125,9 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     # Print the checksums to prove we did something.
     echo "$new_local_checksums"
 
-    # Remove old checksums and append new. Other solutions with `tee -a "$CHECKSUMS"`` failed because an empty line would sneak-in somehow.
-    full_checksums=$(cat <(echo "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo "$new_local_checksums"))
+    # Rotate old checksums and add the ones for new files. Note that we use don't use $new_local_checksums, in case the files got corrupted.
+    # Other solutions with `tee -a "$CHECKSUMS"`` failed because an empty line would sneak-in somehow.
+    full_checksums=$(cat <(echo "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo "$old_checksums"))
     echo "$full_checksums" | grep '\S' > "$CHECKSUMS"
     echo
 
