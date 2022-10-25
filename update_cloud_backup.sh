@@ -19,26 +19,33 @@
 #
 # Note that the script never changes or deletes any files, locally or in the cloud backup, preferring instead to warn of a possible issue.
 
-set -o nounset
+# Remote username and host of your cloud storage, for example from https://www.hetzner.com/storage/storage-box .
+# Highly recommended to set up SSH public key authentication, so that the script can run unattended without interaction.
+#REMOTE=u12345-sub1@u12345.your-storagebox.de
 
-# Because these values are sensitive, these are only examples. Copy the lines below that you want to edit and place them in `vars.sh`.
-REMOTE=u12345@u12345.your-storagebox.de # https://www.hetzner.com/storage/storage-box
-SSH_OPTS=-p23
-HEALTHCHECKS_IO_URL='https://hc-ping.com/GUID' # https://healthchecks.io/
+# SSH port, 23 for Hetzner Storage Box, 22 for most others.
+#SSH_OPTS=-p23
 
-# Location of local directories to be uploaded.
-BASE_PATH="/d"
-RELATIVE_DIR_TO_BACKUP="media/camera/" # Must be relative to $BASE_PATH. Will define the remote structure, e.g. $REMOTE:~/media/camera .
+# Your Healthecks.io URL for reporting statuses. This is critical to get alerts!
+# Create a free account at https://healthchecks.io/ and configure the expected schedule (e.g. daily pings, with alerts after 3 days).
+#HEALTHCHECKS_IO_URL='https://hc-ping.com/GUID'
 
-DIRS_TO_BACKUP="$BASE_PATH/./$RELATIVE_DIR_TO_BACKUP" # The "/./" defines the relative paths for rsync.
+# Absolute path of directory to be uploaded. The /./ defines the path at the remote host,
+# so that /d/./media/camera/ is backed up as $REMOTE:~/media/camera. This directory is
+# never modified.
+#DIR_TO_BACKUP="/d/./media/camera/"
 
 # On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify consistency.
 N_CHECKSUM_PER_RUN=100
 CHECKSUMS=checksums.txt
 
+# In case the lockfile still exists, a previous run might still be active, or it crashed without deleting the lockfile.
+# If there haven't been changes to the local logs in these many minutes, ignore the lockfile and go ahead anyway.
+MAX_LOCKFILE_WAIT_IN_MINUTES=600
+
 # Temporary files deleted at the end of the run.
 LOCKFILE=.update_in_progress
-LOCAL_FILES=local_files.txt
+LOCAL_FILES_LIST=local_files.txt
 
 # Logging. $ERRORS is expected to be empty on a normal run.
 mkdir -p logs
@@ -46,13 +53,25 @@ ERRORS="logs/$(date +%F)_ERRORS.txt"
 RSYNC_LOGS="logs/$(date +%F)_rsync_logs.txt"
 STDOUT_LOGS="logs/$(date +%F)_script_stdout.txt"
 
+#############
+
+if ! test -f vars.sh; then
+    echo "Please create vars.sh with the required values. See README.md for more instructions. Exiting..."
+    exit 1
+fi
+
 # Load the preferred vars with higher priority.
 source vars.sh
 
-#############
+if test -z "$REMOTE" || test -z "$SSH_OPTS" || test -z "$HEALTHCHECKS_IO_URL" || test -z "$DIR_TO_BACKUP"; then
+    echo "The file vars.sh doesn't contain all the required variables set. See README.md for more instructions. Exiting..."
+    exit 1
+fi
 
-# Don't run if the lockfile exists and the log or hash files have been updated in over ten hours. The second check is to prevent a stray lock file from stopping all future backups.
-if test -f "$LOCKFILE" && test "$(find "$CHECKSUMS" "$LOCAL_FILES" "$RSYNC_LOGS" -mmin -600 2> /dev/null)"; then
+set -o nounset
+
+# Don't run if the lockfile exists and the log or hash files have been updated in over ten hours (by default). The second check is to prevent a stray lock file from stopping all future backups.
+if test -f "$LOCKFILE" && test "$(find "$STDOUT_LOGS" $CHECKSUMS" "$LOCAL_FILES_LIST" "$RSYNC_LOGS" -mmin "-$MAX_LOCKFILE_WAIT_IN_MINUTES" 2> /dev/null)"; then
     echo "A cloud backup update is already in progress. Exiting..."
     exit 1
 fi
@@ -68,25 +87,25 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     echo "###"
     echo "Listing local files"
     echo "###"
-    rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIRS_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES"
+    rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
     echo
 
     echo "###"
     echo "Uploading new files"
     echo "###"
-    rsync --files-from="$LOCAL_FILES" --stats --progress --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_PATH" "$REMOTE":
+    rsync --files-from="$LOCAL_FILES_LIST" --stats --progress --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" / "$REMOTE":
     echo
 
     echo "###"
     echo "Checking for missing local files"
     echo "###"
-    rsync --dry-run --itemize-changes --archive --relative --max-delete=-1 --ignore-existing --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_PATH" | grep -F '>f+++++++++' 1>&2
+    rsync --dry-run --itemize-changes --archive --relative --max-delete=-1 --ignore-existing --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": / | grep -F '>f+++++++++' 1>&2
     echo
 
     echo "###"
     echo "Computing checksums for any new local files"
     echo "###"
-    brand_new_checksums=$(grep -oFf "$LOCAL_FILES" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES" | (cd "$BASE_PATH" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
+    brand_new_checksums=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST" | (cd / || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
     echo
 
     echo "###"
@@ -96,7 +115,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS")
 
     # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
-    new_local_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | (cd $BASE_PATH || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
+    new_local_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | (cd / || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
     new_cloud_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE" | tr -d '*')
 
     # Any difference is considered an error.
@@ -116,9 +135,9 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
 n_errors=$(wc -l < "$ERRORS")
 capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | awk 'FNR==2{print $5}')
 
-echo "Cloud storage at $capacity capacity after uploading $DIRS_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
+echo "Cloud storage at $capacity capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
 | tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors")
 
-rm "$LOCAL_FILES"
+rm "$LOCAL_FILES_LIST"
 rm "$LOCKFILE"
 exit "$n_errors"
