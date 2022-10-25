@@ -20,12 +20,13 @@
 # Note that the script never changes or deletes any files, locally or in the cloud backup, preferring instead to warn of a possible issue.
 
 ###
-# Variables
+# Default variables (please override them on vars.sh, not here)
 ###
 
 # The commented-out variables below must be declared in vars.sh, so that they are not exposed in Git and updates to the script won't overwrite their values.
+# The other variables provide default values, unless overridden by vars.sh later on.
 
-# Remote username and host of your cloud storage, for example from https://www.hetzner.com/storage/storage-box .
+# Username and hostname of the remote machine to store the backups.
 # Highly recommended to set up SSH public key authentication, so that the script can run unattended without interaction.
 #REMOTE=u12345-sub1@u12345.your-storagebox.de
 
@@ -42,7 +43,7 @@
 # so that "media/camera/" is backed up as $REMOTE:~/media/camera, regardless of $BASE_DIR.
 #RELATIVE_DIR_TO_BACKUP="media/camera/"
 
-# On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify consistency.
+# On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify integrity.
 N_CHECKSUM_PER_RUN=100
 CHECKSUMS=checksums.txt
 
@@ -117,6 +118,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
     # Upload any new files without modifying or deleting existing ones.
     rsync --files-from="$LOCAL_FILES_LIST" --stat--info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
+    # TODO: remove write permission on remote files after upload.
     echo
 
     echo "###"
@@ -135,9 +137,9 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     echo
 
     echo "###"
-    echo "Checking consistency of $N_CHECKSUM_PER_RUN old files"
+    echo "Checking integrity of $N_CHECKSUM_PER_RUN old files"
     echo "###"
-    # Pick the $N_CHECKSUM_PER_RUN oldest (top of the list) files to check consistency by recomputing the checksum.
+    # Pick the $N_CHECKSUM_PER_RUN oldest (top of the list) files to check integrity by recomputing the checksum.
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS")
 
     # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
