@@ -69,7 +69,7 @@ That being said, since the transfer is one way and it never updates or deletes a
 
 0. Make sure you have a remote machine to store the backup, and you can SSH into it non-interactively.
 1. Sign up for [healthchecks.io](https://healthchecks.io) and create a project. The free plan includes 20 monitoring jobs, of which this script will use only one.
-2. Create a `var.sh` file per example below.
+2. Create a `vars.sh` file per example below.
 3. Download and run `update_cloud_backup.sh` manually once to verify it's working.
 4. Schedule a task to run `update_cloud_backup.sh` daily or weekly. I use the Windows built-in Task Scheduler and `git-bash` to run the script.
 
