@@ -117,7 +117,7 @@ n_errors=$(wc -l < "$ERRORS")
 capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | awk 'FNR==2{print $5}')
 
 echo "Cloud storage at $capacity capacity after uploading $DIRS_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
-| tee -a "$STDOUT_LOGS" | curl --retry 3 -d - "$HEALTHCHECKS_IO_URL/$n_errors" > /dev/null
+| tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors")
 
 rm "$LOCAL_FILES"
 rm "$LOCKFILE"
