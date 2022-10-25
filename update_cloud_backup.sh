@@ -112,10 +112,12 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     # List all local files by syncing to an empty dir. Yes, really.
     rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
+    # Some characters are too much trouble to handle in filenames, just refuse to run. Note that they are all invalid under Windows anyway.
+    grep -E $'[\\\"*>$]' "$LOCAL_FILES_LIST" >&2 && exit
+
     # Upload any new files without modifying or deleting existing ones.
     rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
     # TODO: remove write permission on remote files after upload.
-    # TODO: check charset of files to avoid escaping problems.
     echo
 
     echo "###"
