@@ -18,7 +18,7 @@ This tool is specialized in protecting large, important files that don't change 
 
 - One way transfers with no overwrites or deletion.
     - No changes are ever made to the local copies.
-    - Remote files are never modified or deleted after being created.
+    - Remote files are never modified or deleted after being created, and are made read-only to help enforce this.
 - Detect corruption by bit-rot, ransomware, and accidental deletion.
     - Any difference in file content is assumed to be bad and will generate alerts.
     - Missing local files also generate alerts. **It's not a backup if there's only one good copy.**

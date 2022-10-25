@@ -124,7 +124,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Checking for missing local files"
     echo "###"
     # Dry-run of a restore, catches any missing local files or files that have timestamp/size changed (which were skipped by --ignore-existing on the previous run).
-    rsync --dry-run --itemize-changes --archive --relative --max-delete=-1 --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" | grep -F '>f' 1>&2
+    rsync --dry-run --itemize-changes --archive --no-perms --relative --max-delete=-1 --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" | grep -E '^[.><]f' 1>&2
     echo
 
     echo "###"
@@ -134,6 +134,13 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     # `tr` is used to remove the asterisk from sha256sum output for FreeBSD (Hetzner Storage Box) compatibility.
     brand_new_checksums=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
     echo "$brand_new_checksums"
+    echo
+
+    echo "###"
+    echo "Protecting new files in remote host"
+    echo "###"
+    # Mark the new files as read-only on remote host.
+    awk '{print "chmod -w " "\"" $0 "\""}' "$LOCAL_FILES_LIST" | ssh -T "$SSH_OPTS" "$REMOTE"
     echo
 
     echo "###"
