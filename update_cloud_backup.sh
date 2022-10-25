@@ -88,14 +88,11 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
 (
 
     echo "###"
-    echo "Listing local files"
+    echo "Uploading any new files"
     echo "###"
+    # List all local files.
     rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
-    echo
-
-    echo "###"
-    echo "Uploading new files"
-    echo "###"
+    # Upload any new files without modifying or deleting existing ones.
     rsync --files-from="$LOCAL_FILES_LIST" --stats --progress --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" / "$REMOTE":
     echo
 
@@ -108,13 +105,16 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     echo "###"
     echo "Computing checksums for any new local files"
     echo "###"
+    # List all files not present in the checksums list, and compute their checksums.
+    # `tr` is used to remove the asterisk from sha256sum output for FreeBSD (Hetzner Storage Box) compatibility.
     brand_new_checksums=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST" | (cd / || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
+    echo "$brand_new_checksums"
     echo
 
     echo "###"
     echo "Checking consistency of $N_CHECKSUM_PER_RUN old files"
     echo "###"
-    # Pick the $N_CHECKSUM_PER_RUN oldest (top of the file) files to check consistency by recomputing the checksum.
+    # Pick the $N_CHECKSUM_PER_RUN oldest (top of the list) files to check consistency by recomputing the checksum.
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS")
 
     # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
@@ -151,7 +151,7 @@ fi
 
 n_errors=$(wc -l < "$ERRORS")
 
-echo "Cloud storage at $capacity capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
+echo "Cloud storage at $capacity% capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
 | tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors")
 
 rm "$LOCAL_FILES_LIST"
