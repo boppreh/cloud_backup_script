@@ -2,7 +2,7 @@
 
 A bash script that uploads local files to a cloud backup. Minimal dependencies, maximum data-integrity paranoia, and good performance. Intended for files that don't change, like photos and videos, and therefore should be safer than solutions that try to merge changes.
 
-Uses rsync and other simple Linux tools (available on Windows via [Git Bash](https://gitforwindows.org/)), and connects to the remote machine with simple SSH commands (tested on [Hetzner Storage Box](https://www.hetzner.com/storage/storage-box)).
+Uses rsync and other common Linux tools (available on Windows via [Git Bash](https://gitforwindows.org/)), and connects to the remote machine with simple SSH commands suitable for restricted shells (tested on [Hetzner Storage Box](https://www.hetzner.com/storage/storage-box)).
 
 Runs are reported to [healthchecks.io](https://healthchecks.io), so that you get email alerts if any errors happen or if the script doesn't run on schedule.
 
@@ -34,8 +34,8 @@ This tool is specialized in protecting large, important files that don't change 
     - This tool only detects and reports problems, and never tries to fix anything by itself.
     - Data loss means something went seriously wrong. Recovery must be done carefully, under supervision.
 - But recovery must still be simple.
-    - The data is stored as normal files in the same structure as the local files.
-    - Can be as simple as `scp -r $remote:* .`, or by mounting a (preferably read-only) Samba share.
+    - The backup is stored as normal files in the same structure as the local files.
+    - Recovery can be as simple as `scp -r $remote:* .`, or by mounting a (preferably read-only) Samba share.
 - Reliability trumps everything.
     - Encryption is too risky for my backups.
         - The keys would either be stored locally, and also be lost in most disasters, or in a hard-to-find-and-easy-to-lose offsite shoebox.
@@ -103,10 +103,6 @@ RELATIVE_DIR_TO_BACKUP="media/camera/"
 # On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify integrity.
 # Adjust depending on how many files you have, how often you run the script, and how often you want the integrity checked.
 #N_CHECKSUM_PER_RUN=100
-
-# In case the lockfile still exists, a previous run might still be active, or it crashed without deleting the lockfile.
-# If there haven't been changes to the local logs in these many minutes, ignore the lockfile and go ahead anyway.
-#MAX_LOCKFILE_WAIT_IN_MINUTES=600
 
 # Warn if the remote storage is over 80% capacity.
 #MAX_CAPACITY_PERCENT=80
