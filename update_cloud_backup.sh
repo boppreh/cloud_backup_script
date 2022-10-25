@@ -60,7 +60,7 @@ if ! test -f vars.sh; then
     exit 1
 fi
 
-# Load the preferred vars with higher priority.
+# Load the preferred vars with higher priority. This might overwrite the values seen above.
 source vars.sh
 
 if test -z "$REMOTE" || test -z "$SSH_OPTS" || test -z "$HEALTHCHECKS_IO_URL" || test -z "$DIR_TO_BACKUP"; then
@@ -129,6 +129,14 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     # Other solutions with `tee -a "$CHECKSUMS"`` failed because an empty line would sneak-in somehow.
     full_checksums=$(cat <(echo "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo "$old_checksums"))
     echo "$full_checksums" | grep '\S' > "$CHECKSUMS"
+    echo
+
+    echo "###"
+    echo "Downloading a random file"
+    echo "###"
+    random_file=$(shuf -n1 "$LOCAL_FILES_LIST")
+    checksum=ssh "$SSH_OPTS" "$REMOTE" "cat \"$random_file\"" | sha256sum -b | cut -d" " -f 1
+    grep -F "$checksum $random_file" "$CHECKSUMS" >/dev/null || echo "Incorrect hash $checksum for downloaded sample file $random_file" >&2
     echo
 
 ) 2> >(tee -a "$ERRORS" >&2) 1> >(tee -a "$STDOUT_LOGS")
