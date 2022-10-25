@@ -113,15 +113,11 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
 
 ) 2> >(tee -a "$ERRORS" >&2) 1> >(tee -a "$STDOUT_LOGS")
 
-(
+n_errors=$(wc -l < "$ERRORS")
+capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | awk 'FNR==2{print $5}')
 
-    CAPACITY=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | awk 'FNR==2{print $5}')
-
-    n_errors=$(wc -l < "$ERRORS")
-    echo "Cloud storage at $CAPACITY capacity after uploading $DIRS_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
-    | curl --retry 3 -d - "$HEALTHCHECKS_IO_URL/$n_errors" > /dev/null
-
-) 2> >(tee -a "$ERRORS" >&2) 1> >(tee -a "$STDOUT_LOGS")
+echo "Cloud storage at $capacity capacity after uploading $DIRS_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
+| tee -a "$STDOUT_LOGS" | curl --retry 3 -d - "$HEALTHCHECKS_IO_URL/$n_errors" > /dev/null
 
 rm "$LOCAL_FILES"
 rm "$LOCKFILE"
