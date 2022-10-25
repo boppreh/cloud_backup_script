@@ -110,17 +110,19 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     echo "Uploading any new files"
     echo "###"
-    # List all local files.
+    # List all local files by syncing to an empty dir. Yes, really.
     rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -F '>f+++++++++' | cut -d" " -f 2- | sort --unique > "$LOCAL_FILES_LIST"
     # Upload any new files without modifying or deleting existing ones.
     rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
     # TODO: remove write permission on remote files after upload.
+    # TODO: check charset of files to avoid escaping problems.
     echo
 
     echo "###"
     echo "Checking for missing local files"
     echo "###"
-    rsync --dry-run --itemize-changes --archive --relative --max-delete=-1 --ignore-existing --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" | grep -F '>f+++++++++' 1>&2
+    # Dry-run of a restore, catches any missing local files or files that have timestamp/size changed (which were skipped by --ignore-existing on the previous run).
+    rsync --dry-run --itemize-changes --archive --relative --max-delete=-1 --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" | grep -F '>f' 1>&2
     echo
 
     echo "###"
