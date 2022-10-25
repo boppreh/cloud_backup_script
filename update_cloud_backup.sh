@@ -2,32 +2,41 @@
 
 # update_cloud_backup.sh
 #
-# Uploads local files to a cloud backup. Intended for immutable files like photos and videos, and therefore can give better warnings when those are corrupted.
-# Assumes a dumb remote host running FreeBSD (e.g. Hetzner Storage Box) and restricted hsh shell.
+# Uploads local files to a cloud backup.
+# 
+# Intended for immutable files like photos and videos, and therefore can give better warnings when those are corrupted.
+# Assumes a remote host capable of running sha256sum and df (tested on Hetzner Storage Box's FreeBSD and restricted hsh shell).
+# Pings are sent to healthchecks.io on start and end, so that alerts are sent if the script fails or doesn't execute often enough.
 
 set -o nounset
 
-# Example vars
-REMOTE=user@example.com # Note that Hetzner Storage Box runs Freebsd, so remote commands might differ from GNU versions.
+# Because these values are sensitive, these are only examples. Copy the lines below that you want to edit and place them in `vars.sh`.
+REMOTE=u12345@u12345.your-storagebox.de # https://www.hetzner.com/storage/storage-box
 SSH_OPTS=-p23
-HEALTHCHECKS_IO_URL='https://hc-ping.com/GUID'
+HEALTHCHECKS_IO_URL='https://hc-ping.com/GUID' # https://healthchecks.io/
 
-# Load the actual vars
-source vars.sh
-
+# Location of local directories to be uploaded.
 BASE_PATH="/d"
-DIRS_TO_BACKUP="$BASE_PATH/./media/camera/" # The "/./" is important to set the relative path at the receiving end.
+RELATIVE_DIR_TO_BACKUP="media/camera/" # Must be relative to $BASE_PATH. Will define the remote structure, e.g. $REMOTE:~/media/camera .
 
+DIRS_TO_BACKUP="$BASE_PATH/./$RELATIVE_DIR_TO_BACKUP" # The "/./" defines the relative paths for rsync.
+
+# On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify consistency.
+N_CHECKSUM_PER_RUN=100
+CHECKSUMS=checksums.txt
+
+# Temporary files deleted at the end of the run.
 LOCKFILE=.update_in_progress
 LOCAL_FILES=local_files.txt
-CHECKSUMS=checksums.txt
-N_CHECKSUM_PER_RUN=100
 
+# Logging. $ERRORS is expected to be empty on a normal run.
 mkdir -p logs
 ERRORS="logs/$(date +%F)_ERRORS.txt"
 RSYNC_LOGS="logs/$(date +%F)_rsync_logs.txt"
 STDOUT_LOGS="logs/$(date +%F)_script_stdout.txt"
 
+# Load the preferred vars with higher priority.
+source vars.sh
 
 #############
 
@@ -77,7 +86,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
 
     # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
     new_local_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | (cd $BASE_PATH || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
-    new_cloud_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE")
+    new_cloud_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE" | tr -d '*')
 
     # Any difference is considered an error.
     diff <(echo "$old_checksums") <(echo "$new_local_checksums") 1>&2
