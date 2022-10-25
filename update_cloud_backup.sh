@@ -39,6 +39,9 @@
 N_CHECKSUM_PER_RUN=100
 CHECKSUMS=checksums.txt
 
+# Warn if the remote storage is over 80% capacity.
+MAX_CAPACITY_PERCENT=80
+
 # In case the lockfile still exists, a previous run might still be active, or it crashed without deleting the lockfile.
 # If there haven't been changes to the local logs in these many minutes, ignore the lockfile and go ahead anyway.
 MAX_LOCKFILE_WAIT_IN_MINUTES=600
@@ -142,8 +145,8 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
 ) 2> >(tee -a "$ERRORS" >&2) 1> >(tee -a "$STDOUT_LOGS")
 
 capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | grep -oP '[0-9]+(?=%)')
-if test "$capacity" -ge "80"; then
-    echo "LOW SPACE: remote capacity $capacity% is greater than 80%" >> "$ERRORS"
+if test "$capacity" -ge "$MAX_CAPACITY_PERCENT"; then
+    echo "LOW SPACE: remote capacity $capacity% is greater than $MAX_CAPACITY_PERCENT%" >> "$ERRORS"
 fi
 
 n_errors=$(wc -l < "$ERRORS")
