@@ -1,1 +1,5 @@
 vars.sh
+checksums.txt
+local_files.txt
+.update_in_progress
+logs/*
