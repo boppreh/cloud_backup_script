@@ -7,6 +7,17 @@
 # Intended for immutable files like photos and videos, and therefore can give better warnings when those are corrupted.
 # Assumes a remote host capable of running sha256sum and df (tested on Hetzner Storage Box's FreeBSD and restricted hsh shell).
 # Pings are sent to healthchecks.io on start and end, so that alerts are sent if the script fails or doesn't execute often enough.
+#
+# Scenarios covered:
+# - There's a new local file. Copy it to the cloud backup.
+# - The cloud backup has a file that doesn't exist locally. Warn.
+# - The checksum of a local or a remote file has changed from a previous run (ransomware, bit rot, etc). Warn.
+# - The script hasn't run in X days. Warn (via healthchecks.io).
+# - The script is taking too long and executions are overlapping. Don't run.
+# - The script is taking too long but there's been no progress in checksums or rsync logs over 10 hours. Run normally.
+# - Any of the main steps printed anything to stderr. Warn.
+#
+# Note that the script never changes or deletes any files, locally or in the cloud backup, preferring instead to warn of a possible issue.
 
 set -o nounset
 
