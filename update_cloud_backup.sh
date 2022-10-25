@@ -135,14 +135,18 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" > /dev/null
     echo "Downloading a random file"
     echo "###"
     random_file=$(shuf -n1 "$LOCAL_FILES_LIST")
-    checksum=ssh "$SSH_OPTS" "$REMOTE" "cat \"$random_file\"" | sha256sum -b | cut -d" " -f 1
+    checksum=$(ssh "$SSH_OPTS" "$REMOTE" "cat \"$random_file\"" | sha256sum -b | cut -d" " -f 1)
     grep -F "$checksum $random_file" "$CHECKSUMS" >/dev/null || echo "Incorrect hash $checksum for downloaded sample file $random_file" >&2
     echo
 
 ) 2> >(tee -a "$ERRORS" >&2) 1> >(tee -a "$STDOUT_LOGS")
 
+capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | grep -oP '[0-9]+(?=%)')
+if test "$capacity" -ge "80"; then
+    echo "LOW SPACE: remote capacity $capacity% is greater than 80%" >> "$ERRORS"
+fi
+
 n_errors=$(wc -l < "$ERRORS")
-capacity=$(ssh "$SSH_OPTS" "$REMOTE" "df -h ." | awk 'FNR==2{print $5}')
 
 echo "Cloud storage at $capacity capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
 | tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors")
