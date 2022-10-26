@@ -117,7 +117,6 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
 
     # Upload any new files without modifying or deleting existing ones.
     rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
-    # TODO: remove write permission on remote files after upload.
     echo
 
     echo "###"
@@ -130,9 +129,10 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     echo "Computing checksums for any new local files"
     echo "###"
-    # List all files not present in the checksums list, and compute their checksums.
+    # List all files not present in the checksums list.
+    new_files=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST")
     # `tr` is used to remove the asterisk from sha256sum output for FreeBSD (Hetzner Storage Box) compatibility.
-    brand_new_checksums=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
+    brand_new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
     echo "$brand_new_checksums"
     echo
 
@@ -140,7 +140,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Protecting new files in remote host"
     echo "###"
     # Mark the new files as read-only on remote host.
-    awk '{print "chmod -w " "\"" $0 "\""}' "$LOCAL_FILES_LIST" | ssh -T "$SSH_OPTS" "$REMOTE"
+    echo -n "$new_files" | awk '{print "chmod -w " "\"" $0 "\""}' | tee /dev/tty | ssh -T "$SSH_OPTS" "$REMOTE"
     echo
 
     echo "###"
@@ -150,19 +150,19 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS")
 
     # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
-    new_local_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
-    new_cloud_checksums=$(echo "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE" | tr -d '*')
+    new_local_checksums=$(echo -n "$old_checksums" | cut -d" " -f 2- | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
+    new_cloud_checksums=$(echo -n "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE" | tr -d '*')
 
     # Any difference is considered an error.
-    diff <(echo "$old_checksums") <(echo "$new_local_checksums") 1>&2
-    diff <(echo "$old_checksums") <(echo "$new_cloud_checksums") 1>&2
+    diff <(echo -n "$old_checksums") <(echo -n "$new_local_checksums") 1>&2
+    diff <(echo -n "$old_checksums") <(echo -n "$new_cloud_checksums") 1>&2
 
     # Print the checksums to prove we did something.
     echo "$new_local_checksums"
 
     # Rotate old checksums and add the ones for new files. Note that we use don't use $new_local_checksums, in case the files got corrupted.
     # Other solutions with `tee -a "$CHECKSUMS"`` failed because an empty line would sneak-in somehow.
-    full_checksums=$(cat <(echo "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo "$old_checksums"))
+    full_checksums=$(cat <(echo -n "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo -n "$old_checksums"))
     echo "$full_checksums" | grep '\S' > "$CHECKSUMS"
     echo
 
@@ -171,6 +171,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     random_file=$(shuf -n1 "$LOCAL_FILES_LIST")
     checksum=$(ssh "$SSH_OPTS" "$REMOTE" "cat \"$random_file\"" | sha256sum -b | cut -d" " -f 1)
+    echo "$checksum $random_file"
     grep -F "$checksum $random_file" "$CHECKSUMS" >/dev/null || echo "Incorrect hash $checksum for downloaded sample file $random_file" >&2
     echo
 
