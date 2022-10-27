@@ -65,6 +65,9 @@ STDOUT_LOGS="logs/$(date +%F)_script_stdout.txt"
 # SETUP
 ###
 
+# Use the script's dir in case it's invoked from an unrelated location.
+cd "$(dirname "$0")"
+
 if ! test -f vars.sh;
     then echo "Please create vars.sh with the required values. See README.md for more instructions. Exiting..."
     exit 1
@@ -86,7 +89,10 @@ if test -z "$REMOTE" || test -z "$SSH_OPTS" || test -z "$HEALTHCHECKS_IO_URL" ||
     exit 1
 fi
 
+# Stop if anything unexpected happens.
 set -o nounset
+set -o pipefail
+set -o errexit
 
 # Don't run if the lockfile exists.
 if test -f "$LOCKFILE" ; then
@@ -184,7 +190,7 @@ fi
 n_errors=$(wc -l < "$ERRORS")
 
 echo "Cloud storage at $capacity% capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
-| tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
+| tee /dev/tty -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
 
 
 ###
