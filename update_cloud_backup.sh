@@ -97,6 +97,7 @@ touch "$LOCKFILE"
 touch "$ERRORS"
 touch "$STDOUT_LOGS"
 touch "$RSYNC_LOGS"
+touch "$CHECKSUMS"
 
 
 ###
@@ -130,13 +131,28 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo
 
     echo "###"
-    echo "Computing checksums for any new local files"
+    echo "Verifying integrity of all new and $N_CHECKSUM_PER_RUN old files"
     echo "###"
-    # List all files not present in the checksums list.
-    new_files=$(grep -oFf "$LOCAL_FILES_LIST" "$CHECKSUMS" | grep -vFf - "$LOCAL_FILES_LIST")
-    # `tr` is used to remove the asterisk from sha256sum output for FreeBSD (Hetzner Storage Box) compatibility.
-    brand_new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
-    echo "$brand_new_checksums"
+    # Select some of the oldest files for integrity check.
+    old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS" | tee /dev/tty)
+    # List all files without checksum.
+    new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match --fixed-string --file=- "$LOCAL_FILES_LIST")
+    # Compute the new checksums, print and append to $CHECKSUMS.
+    new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum  | tr -d '*') | tee /dev/tty -a $CHECKSUMS)
+
+    # Verify old checksums of local files.
+    (cd "$BASE_DIR" || exit; sha256sum --quiet --check <(echo "$old_checksums")) \
+        >&2
+    # Verify new checksums of remote files.
+    diff --ignore-space-change <(echo -n "$new_checksums") <(echo -n "$new_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE") \
+        >&2
+    # Verify old checksums of remote files.
+    diff --ignore-space-change <(echo -n "$old_checksums") <(echo -n "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE") \
+        >&2
+
+    # Move the verified checksums to the bottom.
+    sed -i "$N_CHECKSUM_PER_RUN"d "$CHECKSUMS"
+    echo "$old_checksums" >> "$CHECKSUMS"
     echo
 
     echo "###"
@@ -144,29 +160,6 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     # Mark the new files as read-only on remote host.
     echo -n "$new_files" | awk '{print "chmod -w " "\"" $0 "\""}' | tee /dev/tty | ssh -T "$SSH_OPTS" "$REMOTE"
-    echo
-
-    echo "###"
-    echo "Checking integrity of $N_CHECKSUM_PER_RUN old files"
-    echo "###"
-    # Pick the $N_CHECKSUM_PER_RUN oldest (top of the list) files to check integrity by recomputing the checksum.
-    old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS")
-
-    # Compute new checksums (FreeBSD's sha256sum doesn't append a * before each file, so we manually remove it that from local results).
-    new_local_checksums=$(echo -n "$old_checksums" | cut -d" " -f 2- | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum) | tr -d '*')
-    new_cloud_checksums=$(echo -n "$old_checksums" | cut -d" " -f 2- | awk '{print "sha256sum " "\"" $0 "\""}' | ssh -T "$SSH_OPTS" "$REMOTE" | tr -d '*')
-
-    # Any difference is considered an error.
-    diff <(echo -n "$old_checksums") <(echo -n "$new_local_checksums") 1>&2
-    diff <(echo -n "$old_checksums") <(echo -n "$new_cloud_checksums") 1>&2
-
-    # Print the checksums to prove we did something.
-    echo "$new_local_checksums"
-
-    # Rotate old checksums and add the ones for new files. Note that we use don't use $new_local_checksums, in case the files got corrupted.
-    # Other solutions with `tee -a "$CHECKSUMS"`` failed because an empty line would sneak-in somehow.
-    full_checksums=$(cat <(echo -n "$brand_new_checksums") <(sed 1,"$N_CHECKSUM_PER_RUN"d "$CHECKSUMS") <(echo -n "$old_checksums"))
-    echo "$full_checksums" | grep '\S' > "$CHECKSUMS"
     echo
 
     echo "###"
