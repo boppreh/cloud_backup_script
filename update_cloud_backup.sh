@@ -92,7 +92,8 @@ fi
 # Stop if anything unexpected happens.
 set -o nounset
 set -o pipefail
-set -o errexit
+# Don't set errexit because empty grep results are exit 1, for example, and in filters (as opposed to searches) that's a perfectly ok answer.
+#set -o errexit
 
 # Don't run if the lockfile exists.
 if test -f "$LOCKFILE" ; then
@@ -190,7 +191,7 @@ fi
 n_errors=$(wc -l < "$ERRORS")
 
 echo "Cloud storage at $capacity% capacity after uploading $DIR_TO_BACKUP in $SECONDS seconds. $n_errors lines in errors file. Last rsync log line: $(tail -n 1 "$RSYNC_LOGS")" \
-| tee /dev/tty -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
+| tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
 
 
 ###
