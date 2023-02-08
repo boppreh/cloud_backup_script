@@ -133,7 +133,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     # Dry-run of a restore, catches any missing local files, or files that have timestamp/size changed (which were skipped by --ignore-existing on the previous run).
     # All such occurrences are errors.
-    rsync --dry-run --itemize-changes --omit-dir-times --relative --recursive --exclude={'*.nomedia','.hsh_history','.ssh/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" \
+    rsync --dry-run --itemize-changes --times --omit-dir-times --relative --recursive --exclude={'*.nomedia','.hsh_history','.ssh/','.rsync-partial/','for_other_people/'} --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$REMOTE": "$BASE_DIR" \
         >&2
     echo
 
