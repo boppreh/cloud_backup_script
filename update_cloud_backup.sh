@@ -119,7 +119,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Uploading any new files"
     echo "###"
     # List all local files by syncing to an empty dir, and filtering just the files. Yes, really.
-    rsync --dry-run --relative --recursive --itemize-changes --exclude='*.nomedia' "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -oP '>f\++ \K(.+)' \
+    rsync --dry-run --relative --recursive --itemize-changes --exclude={'*.nomedia','.trashed-*','*.tmp'} "$DIR_TO_BACKUP" "$(mktemp -d --dry-run)" | grep -oP '>f\++ \K(.+)' \
         > "$LOCAL_FILES_LIST"
     # Some characters are too much trouble to handle in filenames, just refuse to run. Note that they are all invalid under Windows anyway.
     grep -E $'[\\\"*>$]' "$LOCAL_FILES_LIST" >&2 && exit
