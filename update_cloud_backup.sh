@@ -56,9 +56,9 @@ LOCAL_FILES_LIST=local_files.txt
 
 # Logging. $ERRORS is expected to be empty on a normal run.
 mkdir -p logs
-ERRORS="logs/$(date +%F)_ERRORS.txt"
-RSYNC_LOGS="logs/$(date +%F)_rsync_logs.txt"
-STDOUT_LOGS="logs/$(date +%F)_script_stdout.txt"
+ERRORS="logs/$(date +'%FT%T')_ERRORS.txt"
+RSYNC_LOGS="logs/$(date +'%FT%T')_rsync_logs.txt"
+STDOUT_LOGS="logs/$(date +'%FT%T')_script_stdout.txt"
 
 
 ###
