@@ -43,12 +43,15 @@
 # so that "media/camera/" is backed up as $REMOTE:~/media/camera, regardless of $BASE_DIR.
 #RELATIVE_DIR_TO_BACKUP="media/camera/"
 
+# TODO: Write checksums before upload.
+# TODO: Upload checksums file.
+
 # On every run the oldest $N_CHECKSUM_PER_RUN files from $CHECKSUMS will be hashed both locally and remotely to verify integrity.
 N_CHECKSUM_PER_RUN=100
 CHECKSUMS=checksums.txt
 
-# Warn if the remote storage is over 80% capacity.
-MAX_CAPACITY_PERCENT=80
+# Warn if the remote storage is over X% capacity.
+MAX_CAPACITY_PERCENT=90
 
 # Temporary files deleted at the end of the run.
 LOCKFILE=.update_in_progress
@@ -56,14 +59,17 @@ LOCAL_FILES_LIST=local_files.txt
 
 # Logging. $ERRORS is expected to be empty on a normal run.
 mkdir -p logs
-ERRORS="logs/$(date +'%FT%T')_ERRORS.txt"
-RSYNC_LOGS="logs/$(date +'%FT%T')_rsync_logs.txt"
-STDOUT_LOGS="logs/$(date +'%FT%T')_script_stdout.txt"
+ERRORS="logs/$(date +'%FT%T' | sed -e "s/:/ /g")_ERRORS.txt"
+RSYNC_LOGS="logs/$(date +'%FT%T' | sed -e "s/:/ /g")_rsync_logs.txt"
+STDOUT_LOGS="logs/$(date +'%FT%T' | sed -e "s/:/ /g")_script_stdout.txt"
 
 
 ###
 # SETUP
 ###
+
+# Fix locale behavior. Also necessary if 'grep: -P supports only unibyte and UTF-8 locales'.
+export LC_ALL=en_US.utf8
 
 # Use the script's dir in case it's invoked from an unrelated location.
 cd "$(dirname "$0")"
@@ -125,7 +131,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     grep -E $'[\\\"*>$]' "$LOCAL_FILES_LIST" >&2 && exit
 
     # Upload any new files without modifying or deleting existing ones (--ignore-existing).
-    rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress2 --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
+    rsync --files-from="$LOCAL_FILES_LIST" --stats --info=progress --archive --relative --max-delete=-1 --ignore-existing --partial-dir=.rsync-partial --rsh "ssh $SSH_OPTS" --log-file="$RSYNC_LOGS" "$BASE_DIR" "$REMOTE":
     echo
 
     echo "###"
@@ -140,7 +146,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     echo "Verifying integrity of all new and $N_CHECKSUM_PER_RUN old files"
     echo "###"
-    # Select some of the oldest files for integrity check.
+    # Select some of the oldest files for integrity check. Do it before we add the new files.
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS" | tee /dev/tty)
     # List all files without checksum.
     new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match --fixed-string --file=- "$LOCAL_FILES_LIST")
