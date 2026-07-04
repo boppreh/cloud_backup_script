@@ -53,8 +53,10 @@ CHECKSUMS=checksums.txt
 # Warn if the remote storage is over X% capacity.
 MAX_CAPACITY_PERCENT=90
 
-# Temporary files deleted at the end of the run.
+# Lock file held via flock while a run is in progress. The file itself is kept between runs;
+# the lock is released automatically when the process exits, even if killed.
 LOCKFILE=.update_in_progress
+# Temporary files deleted at the end of the run.
 LOCAL_FILES_LIST=local_files.txt
 
 # Logging. $ERRORS is expected to be empty on a normal run.
@@ -70,6 +72,9 @@ STDOUT_LOGS="logs/$(date +'%FT%T' | sed -e "s/:/ /g")_script_stdout.txt"
 
 # Fix locale behavior. Also necessary if 'grep: -P supports only unibyte and UTF-8 locales'.
 export LC_ALL=en_US.utf8
+
+# Progress is echoed to the terminal, but under systemd there is none and writes to /dev/tty would fail.
+if tty -s; then TTY=/dev/tty; else TTY=/dev/null; fi
 
 # Use the script's dir in case it's invoked from an unrelated location.
 cd "$(dirname "$0")"
@@ -101,12 +106,12 @@ set -o pipefail
 # Don't set errexit because empty grep results are exit 1, for example, and in filters (as opposed to searches) that's a perfectly ok answer.
 #set -o errexit
 
-# Don't run if the lockfile exists.
-if test -f "$LOCKFILE" ; then
+# Don't run if another instance holds the lock.
+exec 9>"$LOCKFILE"
+if ! flock --nonblock 9 ; then
     echo "A cloud backup update is already in progress. Exiting..." | tee >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/1" >/dev/null)
     exit 1
 fi
-touch "$LOCKFILE"
 touch "$ERRORS"
 touch "$STDOUT_LOGS"
 touch "$RSYNC_LOGS"
@@ -147,11 +152,11 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Verifying integrity of all new and $N_CHECKSUM_PER_RUN old files"
     echo "###"
     # Select some of the oldest files for integrity check. Do it before we add the new files.
-    old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS" | tee /dev/tty)
+    old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS" | tee "$TTY")
     # List all files without checksum.
     new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match --fixed-string --file=- "$LOCAL_FILES_LIST")
     # Compute the new checksums, print and append to $CHECKSUMS.
-    new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum  | tr -d '*') | tee /dev/tty -a $CHECKSUMS)
+    new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum  | tr -d '*') | tee "$TTY" -a $CHECKSUMS)
 
     # Verify old checksums of local files.
     (cd "$BASE_DIR" || exit; sha256sum --quiet --check <(echo "$old_checksums")) \
@@ -172,7 +177,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Protecting new files in remote host"
     echo "###"
     # Mark the new files as read-only on remote host.
-    echo -n "$new_files" | awk '{print "chmod -w " "\"" $0 "\""}' | tee /dev/tty | ssh -T "$SSH_OPTS" "$REMOTE"
+    echo -n "$new_files" | awk '{print "chmod -w " "\"" $0 "\""}' | tee "$TTY" | ssh -T "$SSH_OPTS" "$REMOTE"
     echo
 
     echo "###"
@@ -200,9 +205,4 @@ echo "Cloud storage at $capacity% capacity after uploading $DIR_TO_BACKUP in $SE
 | tee -a "$STDOUT_LOGS" >(curl --retry 3 -d @- "$HEALTHCHECKS_IO_URL/$n_errors" >/dev/null)
 
 
-###
-# Cleanup
-###
-
-rm "$LOCKFILE"
 exit "$n_errors"
