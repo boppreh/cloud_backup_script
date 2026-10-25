@@ -157,7 +157,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     # and --line-regexp avoids a path matching as a substring of another.
     new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match '^$' | grep --invert-match --fixed-strings --line-regexp --file=- "$LOCAL_FILES_LIST")
     # Compute the new checksums, print and append to $CHECKSUMS.
-    new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum  | tr -d '*') | tee "$TTY" -a $CHECKSUMS)
+    new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum --binary | tr -d '*') | tee "$TTY" -a $CHECKSUMS)
 
     # Verify old checksums of local files.
     (cd "$BASE_DIR" || exit; sha256sum --quiet --check <(echo "$old_checksums")) \
@@ -178,7 +178,7 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "Protecting new files in remote host"
     echo "###"
     # Mark the new files as read-only on remote host.
-    echo -n "$new_files" | awk '{print "chmod -w " "\"" $0 "\""}' | tee "$TTY" | ssh -T "$SSH_OPTS" "$REMOTE"
+    echo -n "$new_files" | awk '{print "chmod a-w " "\"" $0 "\""}' | tee "$TTY" | ssh -T "$SSH_OPTS" "$REMOTE"
     echo
 
     echo "###"
