@@ -153,8 +153,9 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
     echo "###"
     # Select some of the oldest files for integrity check. Do it before we add the new files.
     old_checksums=$(head -n "$N_CHECKSUM_PER_RUN" "$CHECKSUMS" | tee "$TTY")
-    # List all files without checksum.
-    new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match --fixed-string --file=- "$LOCAL_FILES_LIST")
+    # List all files without checksum. Empty patterns are dropped because they match everything,
+    # and --line-regexp avoids a path matching as a substring of another.
+    new_files=$(cut -d' ' -f 2- "$CHECKSUMS" | grep --invert-match '^$' | grep --invert-match --fixed-strings --line-regexp --file=- "$LOCAL_FILES_LIST")
     # Compute the new checksums, print and append to $CHECKSUMS.
     new_checksums=$(echo -n "$new_files" | (cd "$BASE_DIR" || exit; xargs --no-run-if-empty --delimiter='\n' sha256sum  | tr -d '*') | tee "$TTY" -a $CHECKSUMS)
 
@@ -169,8 +170,8 @@ curl --retry 3 "$HEALTHCHECKS_IO_URL/start" >/dev/null
         >&2
 
     # Move the verified checksums to the bottom.
-    sed -i "$N_CHECKSUM_PER_RUN"d "$CHECKSUMS"
-    echo "$old_checksums" >> "$CHECKSUMS"
+    sed -i "1,${N_CHECKSUM_PER_RUN}d" "$CHECKSUMS"
+    test -n "$old_checksums" && echo "$old_checksums" >> "$CHECKSUMS"
     echo
 
     echo "###"
