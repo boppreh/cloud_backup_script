@@ -55,7 +55,7 @@ MAX_CAPACITY_PERCENT=90
 
 # Lock file held via flock while a run is in progress. The file itself is kept between runs;
 # the lock is released automatically when the process exits, even if killed.
-LOCKFILE=.update_in_progress
+LOCKFILE=.lockfile
 # Temporary files deleted at the end of the run.
 LOCAL_FILES_LIST=local_files.txt
 
